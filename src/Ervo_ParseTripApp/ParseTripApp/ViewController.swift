@@ -1,0 +1,127 @@
+//
+//  ViewController.swift
+//  TripCard
+//
+//  Created by Студент on 12/04/2017.
+//  Copyright © 2017 hse. All rights reserved.
+//
+
+import UIKit
+import Parse
+
+class ViewController: UIViewController, UICollectionViewDelegate, UICollectionViewDataSource, TripCollectionCellDelegate, UIGestureRecognizerDelegate {
+    @IBOutlet var collectionView: UICollectionView!
+    
+    private var trips = [Trip]()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        collectionView.backgroundColor = UIColor.clear
+        
+        if UIScreen.main.bounds.size.height == 568.0 {
+            let flowLayout = self.collectionView.collectionViewLayout as! UICollectionViewFlowLayout
+            flowLayout.itemSize = CGSize(width: 250.0, height: 330.0)
+        }
+        
+        loadTripsFromParse()
+        
+        let swipeUpRecognizer = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe))
+        swipeUpRecognizer.direction = .up
+        swipeUpRecognizer.delegate  = self
+        self.collectionView.addGestureRecognizer(swipeUpRecognizer)
+    }
+    
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        // Dispose of any resources that can be recreated.
+    }
+    
+    func numberOfSections(in collectionView: UICollectionView) -> Int {
+        return 1
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        return trips.count
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "Cell", for: indexPath) as! TripCollectionViewCell
+        cell.cityLabel.text = trips[indexPath.row].city
+        cell.countryLabel.text = trips[indexPath.row].country
+
+        cell.imageView.image = UIImage()
+        if let featuredImage = trips[indexPath.row].featuredImage {
+            featuredImage.getDataInBackground(block: { (imageData, error) in
+                if let tripImageData = imageData {
+                    cell.imageView.image = UIImage(data: tripImageData)
+                }
+            })
+        }
+        
+        cell.priceLabel.text = "$\(String(trips[indexPath.row].price))"
+        cell.totalDaysLabel.text = "\(trips[indexPath.row].totalDays) days"
+        cell.isLiked = trips[indexPath.row].isLiked
+        cell.layer.cornerRadius = 4.0
+        cell.delegate = self
+        return cell
+    }
+    
+    func didLikeButtonPressed(cell: TripCollectionViewCell) {
+        if let indexPath = collectionView.indexPath(for: cell) {
+            trips[indexPath.row].isLiked = !trips[indexPath.row].isLiked
+            cell.isLiked = trips[indexPath.row].isLiked
+            
+            trips[indexPath.row].toPFObject().saveInBackground(block: { (success, error) -> Void in
+                if (success) {
+                    print("Successfully updated the trip")
+                } else {
+                    print("Error: \(error?.localizedDescription)")
+                }
+            })
+        }
+    }
+    
+    func loadTripsFromParse() {
+        trips.removeAll()
+        collectionView.reloadData()
+        let query = PFQuery(className: "Trip")
+        query.cachePolicy = PFCachePolicy.networkElseCache
+        query.findObjectsInBackground { (objects, error) -> Void in
+            if let error = error {
+                print("Error: \(error) \(error.localizedDescription)")
+                return
+            }
+            if let objects = objects {
+                for (index, object) in objects.enumerated() {
+                    let trip = Trip(pfObject: object)
+                    self.trips.append(trip)
+                    let indexPath = IndexPath(row: index, section: 0)
+                    self.collectionView.insertItems(at: [indexPath])
+                }
+            }
+        }
+    }
+    
+    func handleSwipe(gesture: UISwipeGestureRecognizer) {
+        let point = gesture.location(in: self.collectionView)
+        if (gesture.state == UIGestureRecognizerState.ended) {
+            if let indexPath = collectionView.indexPathForItem(at: point) {
+                trips[indexPath.row].toPFObject().deleteInBackground(block: { (success, error) -> Void in
+                    if (success) {
+                        print("Successfully removed the trip")
+                    } else {
+                        print("Errro: \(error?.localizedDescription)")
+                        return
+                    }
+                    self.trips.remove(at: indexPath.row)
+                    self.collectionView.deleteItems(at: [indexPath])
+                })
+            }
+        }
+    }
+    
+    @IBAction func reloadButtonTapped(_ sender: Any) {
+        loadTripsFromParse()
+    }
+}
+
